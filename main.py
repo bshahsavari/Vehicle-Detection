@@ -97,7 +97,7 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
                 for channel in range(feature_image.shape[2]):
                     hog_features.append(get_hog_features(feature_image[:,:,channel], 
                                         orient, pix_per_cell, cell_per_block, 
-                                        vis=False, feature_vec=True))
+                                        vis=True, feature_vec=True))
                 hog_features = np.ravel(hog_features)        
             else:
                 hog_features = get_hog_features(feature_image[:,:,hog_channel], orient, 
@@ -344,8 +344,7 @@ def find_labels(draw_image,hot_windows,heatmap_old, alpha, threshold = 2):
         
 
 
-
-#%% Pipeline
+#%% Read images
 
 # Divide up into cars and notcars
 images = glob.glob('./data/non-vehicles/*/*.png',recursive=True)
@@ -358,14 +357,17 @@ cars = []
 for image in images:
     cars.append(image)
 
+plt.subplot(1,2,1)
+plt.imshow(mpimg.imread(cars[0]))
+plt.title('Car')
+plt.subplot(1,2,2)
+plt.imshow(mpimg.imread(notcars[0]))
+plt.title('Not-car')
+#plt.savefig('./output_images/car_notcar.jpg')
 
-# Reduce the sample size because
-# The quiz evaluator times out after 13s of CPU time
-#sample_size = 500
-#cars = cars[0:sample_size]
-#notcars = notcars[0:sample_size]
 
-### TODO: Tweak these parameters and see how the results change.
+#%% Extract featuers
+
 color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
 orient = 8  # HOG orientations
 pix_per_cell = 8 # HOG pixels per cell
