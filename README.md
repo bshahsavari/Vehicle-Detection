@@ -1,6 +1,7 @@
 ##Vehicle Detection
 ###A software pipeline to detect vehicles in a video from a front-facing camera on a car.
 
+![Perspective](./output_images/output.gif) 
 ---
 
 **The pipeline is implemented in `main.py` and includes the following features:**
