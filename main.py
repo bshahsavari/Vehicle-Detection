@@ -64,6 +64,7 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
                         spatial_feat=True, hist_feat=True, hog_feat=True):
     # Create a list to append feature vectors to
     features = []
+    hog_images=[]
     # Iterate through the list of images
     for file in tqdm(imgs):
         file_features = []
@@ -95,9 +96,11 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
             if hog_channel == 'ALL':
                 hog_features = []
                 for channel in range(feature_image.shape[2]):
-                    hog_features.append(get_hog_features(feature_image[:,:,channel], 
+                    feat, hog_img = get_hog_features(feature_image[:,:,channel], 
                                         orient, pix_per_cell, cell_per_block, 
-                                        vis=True, feature_vec=True))
+                                        vis=True, feature_vec=True)
+                    hog_images.append(hog_img)
+                    hog_features.append(feat)
                 hog_features = np.ravel(hog_features)        
             else:
                 hog_features = get_hog_features(feature_image[:,:,hog_channel], orient, 
@@ -106,7 +109,7 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
             file_features.append(hog_features)
         features.append(np.concatenate(file_features))
     # Return list of feature vectors
-    return features
+    return features, hog_images
     
 # Define a function that takes an image,
 # start and stop positions in both x and y, 
@@ -380,13 +383,13 @@ hist_feat = True # Histogram features on or off
 hog_feat = True # HOG features on or off
 y_start_stop = [None, None] # Min and max in y to search in slide_window()
 
-car_features = extract_features(cars, color_space=color_space, 
+car_features, _ = extract_features(cars, color_space=color_space, 
                         spatial_size=spatial_size, hist_bins=hist_bins, 
                         orient=orient, pix_per_cell=pix_per_cell, 
                         cell_per_block=cell_per_block, 
                         hog_channel=hog_channel, spatial_feat=spatial_feat, 
                         hist_feat=hist_feat, hog_feat=hog_feat)
-notcar_features = extract_features(notcars, color_space=color_space, 
+notcar_features, _ = extract_features(notcars, color_space=color_space, 
                         spatial_size=spatial_size, hist_bins=hist_bins, 
                         orient=orient, pix_per_cell=pix_per_cell, 
                         cell_per_block=cell_per_block, 
@@ -427,7 +430,44 @@ print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
 # Check the prediction time for a single sample
 t=time.time()
 
-#%%
+
+#%% Plot hog features
+_, hog_images = extract_features(cars[0:1], color_space=color_space, 
+                        spatial_size=spatial_size, hist_bins=hist_bins, 
+                        orient=orient, pix_per_cell=pix_per_cell, 
+                        cell_per_block=cell_per_block, 
+                        hog_channel=hog_channel, spatial_feat=spatial_feat, 
+                        hist_feat=hist_feat, hog_feat=hog_feat)
+
+plt.subplot(1,4,1)
+plt.imshow(mpimg.imread(cars[0]))
+plt.subplot(1,4,2)
+plt.imshow(hog_images[0],cmap = 'gray')
+plt.subplot(1,4,3)
+plt.imshow(hog_images[1],cmap = 'gray')
+plt.subplot(1,4,4)
+plt.imshow(hog_images[2],cmap = 'gray')
+#plt.savefig('./output_images/car_hog.jpg')
+plt.show()
+_, hog_images = extract_features(notcars[0:1], color_space=color_space, 
+                        spatial_size=spatial_size, hist_bins=hist_bins, 
+                        orient=orient, pix_per_cell=pix_per_cell, 
+                        cell_per_block=cell_per_block, 
+                        hog_channel=hog_channel, spatial_feat=spatial_feat, 
+                        hist_feat=hist_feat, hog_feat=hog_feat)
+
+plt.subplot(1,4,1)
+plt.imshow(mpimg.imread(notcars[0]))
+plt.subplot(1,4,2)
+plt.imshow(hog_images[0],cmap = 'gray')
+plt.subplot(1,4,3)
+plt.imshow(hog_images[1],cmap = 'gray')
+plt.subplot(1,4,4)
+plt.imshow(hog_images[2],cmap = 'gray')
+#plt.savefig('./output_images/notcar_hog.jpg')
+plt.show()
+
+#%% Determine windows for search
 y_start_stop = [400, None]
 x_start_stop=[300, None]
 xy_window=(128, 110)
@@ -452,41 +492,8 @@ del X_train, X_test, y_train, y_test
 
 file_output = 'project_output.mp4'
 clip1 = VideoFileClip("project_video.mp4")
-#%%
-i = 0 
-s = state()
-heatmap = []
-def process_image(image):
-    global i
-    global heatmap
-    global s
-    img_n = image.astype(np.float32)/255
-    hot_windows = search_windows(img_n, windows, svc, X_scaler, color_space=color_space, 
-                        spatial_size=spatial_size, hist_bins=hist_bins, 
-                        orient=orient, pix_per_cell=pix_per_cell, 
-                        cell_per_block=cell_per_block, 
-                        hog_channel=hog_channel, spatial_feat=spatial_feat, 
-                        hist_feat=hist_feat, hog_feat=hog_feat) 
-    labels, heatmap = find_labels(image,hot_windows,heatmap_old=heatmap, alpha=0.3, threshold = 2)
-    labels = s.update_labels(labels)  
-    result = s.draw_labeled_bboxes(np.copy(image), labels)
-#    plt.imshow(heatmap/np.max(heatmap),cmap='hot')
-#    plt.show()
-    i+=1
-    if (i%10==0):
-        plt.imshow(result)
-        plt.show()
-        plt.pause(0.05)
-    return result
 
-# Import everything needed to edit/save/watch video clips
-
-
-#file_output = 'test_output.mp4'
-#clip1 = VideoFileClip("test_video.mp4")
-white_clip = clip1.fl_image(process_image) #NOTE: this function expects color images!!
-white_clip.write_videofile(file_output, audio=False)
-
+#%% Visualize the intermediate steps
 #%%
 vid = np.zeros((int(clip1.fps*clip1.duration),clip1.size[1], clip1.size[0],3),dtype=np.uint8)
 for kk,frame in tqdm(enumerate(clip1.iter_frames())):
@@ -516,12 +523,14 @@ for i in range(1000,1010):
     plt.imshow(heatmap/np.max(heatmap))
     plt.subplot(1,2,2)
     plt.imshow(result)
+#    plt.savefig('./output_images/'+str(i)+'.jpg')
     plt.show()
     plt.draw()
     plt.pause(0.05)
-#    
+    
     
 #%%
+s = state()
 img_n = image.astype(np.float32)/255
 hot_windows = search_windows(img_n, windows, svc, X_scaler, color_space=color_space, 
                         spatial_size=spatial_size, hist_bins=hist_bins, 
@@ -530,23 +539,64 @@ hot_windows = search_windows(img_n, windows, svc, X_scaler, color_space=color_sp
                         hog_channel=hog_channel, spatial_feat=spatial_feat, 
                         hist_feat=hist_feat, hog_feat=hog_feat)                       
 
+
+#The following plot shows the windows in which a car was detected.
+window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
+plt.imshow(window_img)
+#plt.savefig('./output_images/windows_detected.jpg')
+plt.show()
     
 labels, heatmap = find_labels(draw_image,hot_windows,heatmap_old=[], alpha=0.2, threshold = 2)
                           
 
-
-window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
-plt.imshow(window_img)
-plt.show()
-
+# Plot the heat maps
 plt.imshow(heatmap/np.max(heatmap),cmap='hot')
 plt.show()
 
 print(labels[1], 'cars found')
-result = draw_labeled_bboxes(np.copy(draw_image), labels)
+result = s.draw_labeled_bboxes(np.copy(draw_image), labels)
 # Display the image
 plt.imshow(result)
-    
+
+#%%
+i = 0 
+s = state()
+heatmap = []
+def process_image(image):
+    global i
+    global heatmap
+    global s
+    img_n = image.astype(np.float32)/255
+    hot_windows = search_windows(img_n, windows, svc, X_scaler, color_space=color_space, 
+                        spatial_size=spatial_size, hist_bins=hist_bins, 
+                        orient=orient, pix_per_cell=pix_per_cell, 
+                        cell_per_block=cell_per_block, 
+                        hog_channel=hog_channel, spatial_feat=spatial_feat, 
+                        hist_feat=hist_feat, hog_feat=hog_feat) 
+    labels, heatmap = find_labels(image,hot_windows,heatmap_old=heatmap, alpha=0.3, threshold = 2)
+    labels = s.update_labels(labels)  
+    result = s.draw_labeled_bboxes(np.copy(image), labels)
+    # Uncomment to resize the video output
+    # result = cv2.resize(result, None,  fx = 0.4, fy = 0.4)
+    # Uncomment to plot the heat maps
+    # plt.imshow(heatmap/np.max(heatmap),cmap='hot')
+    # plt.show()
+    i+=1
+    if (i%10==0):
+        plt.imshow(result)
+        plt.show()
+        plt.pause(0.05)
+    return result
+
+
+# Uncomment to save the video
+#white_clip = clip1.fl_image(process_image) #NOTE: this function expects color images!!
+#white_clip.write_videofile(file_output, audio=False)
+
+# gif output
+#white_clip = clip1.fl_image(process_image) #NOTE: this function expects color images!!
+#white_clip.write_gif('./output_images/output.gif',fps=20,opt='nq')
+
     
     
     

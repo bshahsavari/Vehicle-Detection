@@ -65,66 +65,124 @@ car_features = extract_features(cars, color_space=color_space,
                         hist_feat=hist_feat, hog_feat=hog_feat)
 ```
  
-I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
+The tuning procedure for these parameters is discussed in the next section.
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
+For the two figures shown above if we use  `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=8` and `cells_per_block=2` the features extracted from the three channels look like this:
+
+![Perspective](./output_images/car_hog.jpg) 
+![Perspective](./output_images/notcar_hog.jpg) 
 
 
-![alt text][image2]
+####2. Design procedure for choosing the final values of HOG parameters
 
-####2. Explain how you settled on your final choice of HOG parameters.
+The tunning was automated in a brute-force fashion and the performance
+was evaluated on the test set. More specifically, a search was performed
+on all color-spaces, HOG parameters, chosen image channels, number and size of bins, and enabling/disabling feature extraction methods.
 
-I tried various combinations of parameters and...
+The final choice of parameters is given below which :
+```
+color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+orient = 8  # HOG orientations
+pix_per_cell = 8 # HOG pixels per cell
+cell_per_block = 2 # HOG cells per block
+hog_channel = 'ALL' # Can be 0, 1, 2, or "ALL"
+spatial_size = (16, 16) # Spatial binning dimensions
+hist_bins = 32    # Number of histogram bins
+spatial_feat = True # Spatial features on or off
+hist_feat = True # Histogram features on or off
+hog_feat = True # HOG features on or off
+```
 
-####3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
+####3. Training a classifier
 
-I trained a linear SVM using...
+The extracted features are fed to a Linear SVC model and evaluated 
+on the test set. The final test accuracy error is 98.82%
+
+```
+svc = LinearSVC(max_iter=20000)
+svc.fit(X_train, y_train)
+print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
+```
 
 ###Sliding Window Search
 
-####1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
+The sliding window search consists of two main functions:  `slide_window` that generates the searching windows and `search_windows` that looks into the generated windows and runs the classifier on that patch to find the cars.
 
-![alt text][image3]
+The size of windows and the search region for each scale are determined manually by looking at a few images with close and far away cars. After 
+some iterations the following four sets are chosen.
 
-####2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
+```
+windows = slide_window(image, x_start_stop=[300, None], y_start_stop=[400, 500], 
+                    xy_window=(96, 96), xy_overlap=(0.75, 0.75))
+windows += slide_window(image, x_start_stop=[300, None], y_start_stop=[400, 500], 
+                    xy_window=(144, 144), xy_overlap=(0.75, 0.75))
+windows += slide_window(image, x_start_stop=[300, None], y_start_stop=[430, 550], 
+                    xy_window=(192, 192), xy_overlap=(0.75, 0.75))
+windows += slide_window(image, x_start_stop=[300, None], y_start_stop=[460, 580], 
+                    xy_window=(192, 192), xy_overlap=(0.75, 0.75))
+```
+where ` xy_window` determines the size (scale) of windows, `xy_overlap` corresponds to the overlapping ratio of windows, 
+and `x_start_stop, y_start_stop` are tuples that determine the search region.
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+The following plot shows the windows in which a car was detected.
+![Perspective](./output_images/windows_detected.jpg) 
 
-![alt text][image4]
+
 ---
 
-### Video Implementation
+### Video Processing
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
-Here's a [link to my video result](./project_video.mp4)
+Processing the video frames is implemented in `process_image(image)` and consists of two steps: 
+* Running *Sliding Window Search* (i.e. `search_windows()`) to find the windows that contain a car
+* Combining the boxes together, rejecting outliers and temporal filtering to establish an accurate and smoothly moving location for each car in the image
+
+The first part is already explained in the previous sections. For temporal filtering and outlier rejection a class with name `state` is defined that 
+incorporates the history of *heat maps*, car locations and final box positions. 
+
+Once the detection is performed on searching windows, the windows 
+with positive detection are passed to `find_labels()` function. In this 
+stage the individual windows contribute to a unique heat map and 
+we assign one label to each continuous patch in that heat map. In other words, we combine the windows by replacing them with a heat map.
+
+To smooth out the heat map and remove the outliers, an exponential filtering (1st order transfer function with a pole at 0.3) is applied to the 
+heat map. 
+
+To remove the outliers and also avoid detecting multiple cars when the 
+heat map patch of one car is split into multiple parts we monitor the number of detected cars in time and apply a median filter to it.
+More specifically, the number of detected cars in each frame is equal to the median of the number of labels detected in that frame and the past 9 frames.
+
+On top of the previous two filtering mitigations, we use a median filter 
+on the location and size of boxes that are drawn around the cars. This 
+makes the shape and location of boxes change more smoothly in time and avoids any sudden changes in the appearance of those boxes.
+
+Here are three examples of filtered heat maps and detected cars from the output video:
 
 
-####2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
+![Perspective](./output_images/1001.jpg) 
+![Perspective](./output_images/1005.jpg) 
+![Perspective](./output_images/1009.jpg) 
 
-I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.  
+###Final video output
+Here's a [link](https://youtu.be/-sxc0D1V39g)  to the video output on YouTube.
 
-Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
-
-### Here are six frames and their corresponding heatmaps:
-
-![alt text][image5]
-
-### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all six frames:
-![alt text][image6]
-
-### Here the resulting bounding boxes are drawn onto the last frame in the series:
-![alt text][image7]
-
-
+![Perspective](./output_images/output.gif) 
 
 ---
 
 ###Discussion
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+####Potential Failures:
+The algorithm fails when the cars are close to each other because the 
+corresponding patches in the heat map gets merged together. 
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+The time complexity of algorithm scales linearly with the overlap ratio of searching windows. As a result, detecting precise position of the cars, especially farther ones, requires high computation power when it comes to on the fly implementation.
 
-Vehicle Detection
+####Future Work:
+In order to distinguish the close cars, one can use a clustering method to split the merged patches into number of cars clusters. In this case, the number of cars should be inferred from the frames before the cars get too close to each other.
+
+Moreover, the current algorithm can be improved by taking the temporal relation between the position of other cars in consecutive frames. 
+Bayesian filtering of car position would be a simple method to do so. For instance, the heat map calculated in
+each frame can be normalized to a probability distribution and used in the next frame as a prior probability. The 
+position of cars is then defined as the argmax of posterior probability. 
+More complex methods like Kalman filtering and particle filtering can be employed to incroporate the speed and car dynamics as well.
